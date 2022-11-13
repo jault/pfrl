@@ -108,7 +108,7 @@ def train_loop(
                 # Evaluate the current agent
                 if evaluator is not None:
                     eval_score = evaluator.evaluate_if_necessary(
-                        t=global_t, episodes=global_episodes, env=eval_env, agent=agent
+                        t=global_episodes, episodes=global_episodes, env=eval_env, agent=agent
                     )
 
                     if (
@@ -184,7 +184,8 @@ def train_agent_async(
     exception_event=None,
     use_shared_memory=True,
     num_agents_byz=0,
-    step_before_disable=1
+    step_before_disable=1,
+    ucb_param=1.0
 ):
     """Train agent asynchronously using multiprocessing.
 
@@ -243,13 +244,11 @@ def train_agent_async(
     counter = mp.Value("l", 0)
     episodes_counter = mp.Value("l", 0)
 
-    act_val = mp.Array("d", 10)     # Q-values
-    visits = mp.Array("d", 10)      # number of visits
-    agent_rewards = mp.Array("d", 10)   # Used for UCB with rewards
-    filtered_agents = mp.Array("l", 10)     # Permanently filtered agent memory
+    act_val = mp.Array("d", processes)     # Q-values
+    visits = mp.Array("d", processes)      # number of visits
+    filtered_agents = mp.Array("l", processes)     # Permanently filtered agent memory
     for i in range(len(act_val)): act_val[i] = 0
     for i in range(len(visits)): visits[i] = 0
-    for i in range(len(agent_rewards)): agent_rewards[i] = 0
     for i in range(len(filtered_agents)): filtered_agents[i] = 0
 
     time = mp.Value("l", 0)     # Number of total rollouts completed
@@ -276,7 +275,9 @@ def train_agent_async(
                         my_grad.append(grad_np[j])
                 all_grads.append(np.asarray(my_grad))
             all_grads = np.vstack(all_grads)
-            r = (1-np.mean(np.var(all_grads, axis=-1)))*100
+            #r = -np.mean(np.var(all_grads, axis=-1)) / ucb_param
+            all_grads = torch.Tensor(np.vstack(all_grads))
+            r = -euclidean_dist(all_grads, all_grads).triu().mean() / ucb_param
 
             # Update Q-values
             act_val[filter_act.value] += (r-act_val[filter_act.value]) / visits[filter_act.value]
@@ -311,11 +312,14 @@ def train_agent_async(
 
         # Mask permanently filtered agents
         for i in range(len(filtered_agents)):
-            if filtered_agents[i] == 1: act_val[i] = 0
+            if filtered_agents[i] == 1: act_val[i] = -np.inf
 
-        # Initial selection (visits 0) #TODO properly select at random
+        # Initial selection (visits 0)
         if np.min(np_visits) < 1:
-            act = np.argmin(np_visits)
+            rnd_probs = np.ones(processes) / (processes - filtered_count.value)
+            for i in range(len(visits)):
+                if visits[i] == step_before_disable+1: rnd_probs[i] = 0.0
+            act = np.random.choice(processes, p=rnd_probs)
         else:   # UCB argmax policy
             act = np.argmax(values)
 
@@ -454,3 +458,21 @@ def mp_to_numpy(mp_arr):
     for i in range(len(mp_arr)):
         buff.append(mp_arr[i])
     return np.asarray(buff)
+
+def euclidean_dist(x, y):
+    """
+    Args:
+      x: pytorch Variable, with shape [m, d]
+      y: pytorch Variable, with shape [n, d]
+    Returns:
+      dist: pytorch Variable, with shape [m, n]
+    """
+    import torch
+    m, n = x.size(0), y.size(0)
+    xx = torch.pow(x, 2).sum(1, keepdim=True).expand(m, n)
+    yy = torch.pow(y, 2).sum(1, keepdim=True).expand(n, m).T
+    dist = xx + yy
+    dist.addmm_(1, -2, x, y.T)
+    dist[dist < 0] = 0
+    dist = dist.sqrt()
+    return dist

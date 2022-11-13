@@ -78,6 +78,7 @@ def parse_args():
     parser.add_argument("--rew_scale", type=float, default=1.0)
     parser.add_argument("--hidden_size", type=int, default=64)
     parser.add_argument("--activation", type=int, default=1)
+    parser.add_argument("--ucb_param", type=float, default=1)
     args = parser.parse_args()
     return args
 
@@ -193,13 +194,14 @@ def train_a3c(args):
             make_env=make_env,
             profile=args.profile,
             steps=args.steps,
-            eval_n_steps=args.eval_n_steps,
-            eval_n_episodes=None,
-            eval_interval=None,
+            eval_n_steps=None,
+            eval_n_episodes=10,
+            eval_interval=args.eval_interval,
             global_step_hooks=[],
             save_best_so_far_agent=True,
             num_agents_byz=args.malicious,
-            step_before_disable=args.ucb_disable
+            step_before_disable=args.ucb_disable,
+            ucb_param=args.ucb_param
         )
     mean_reward = get_results(os.path.join(args.outdir, str(args.seed) + '.log'), gym.spec(args.env).reward_threshold)
     return mean_reward

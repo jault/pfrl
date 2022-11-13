@@ -12,7 +12,9 @@ install_requires = [
     'pandas',
     'matplotlib',
     'mujoco-py<2.2,>=2.1',
-    'optuna'
+    'optuna',
+    'box2d',
+    'box2d-kengz'
 ]
 
 test_requires = [

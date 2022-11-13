@@ -122,6 +122,7 @@ class A3C(agent.AttributeSavingMixin, agent.AsyncAgent):
         self.average_entropy = 0
 
         self.updated = False
+        self.set_malicious()
 
     def sync_parameters(self):
         copy_param.copy_param(target_link=self.model, source_link=self.shared_model)
@@ -233,12 +234,13 @@ class A3C(agent.AttributeSavingMixin, agent.AsyncAgent):
         if self.malicious and self.mal_type == 'sign':
             for param in self.model.parameters():
                 param.grad = param.grad.clone() * -2.5
+        elif self.malicious and self.mal_type == 'noise':
+            for param in self.model.parameters():
+                rnd = (torch.rand(param.grad.shape, device=param.device) * 2 - 1) * (
+                        param.grad.max().data - param.grad.min().data) * 3
+                param.grad = param.grad.clone() + rnd
 
         self.updated = True
-        total_rew = 0
-        for i in reversed(range(self.t_start, self.t)):
-            total_rew += self.past_rewards[i]
-        self.agent_rewards[self.process_idx] += total_rew
 
     def add_update(self):
         # Copy the gradients to the globally shared model
@@ -294,6 +296,7 @@ class A3C(agent.AttributeSavingMixin, agent.AsyncAgent):
             else:
                 pout, vout = self.model(statevar)
             # Do not backprop through sampled actions
+            self.set_malicious()
             if self.malicious and self.mal_type == 'act':
                 action = self.get_byz_act(pout)
             else:
@@ -316,7 +319,15 @@ class A3C(agent.AttributeSavingMixin, agent.AsyncAgent):
         return action
 
     def get_byz_act(self, pout):
-        action = random.randint(0, int(pout.probs.size(dim=1)))
+        #TODO baseline doesn't use a random act??
+        # import numpy as np
+        # action = pout.sample()
+        # if isinstance(action, int):  # discrete action space
+        #     action = 0
+        # else:  # continuous
+        #     action = np.zeros(len(self.env.action_space.sample()), dtype=np.float32)
+        #action = random.randint(0, int(pout.probs.size(dim=1)))
+        action = 0
         retens = torch.Tensor([action])[0]
         self.past_action[self.t] = retens
         return action

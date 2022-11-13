@@ -14,18 +14,22 @@ sys.stderr = f
 
 def objective(trial):
     args = train_a3c.parse_args()
-    args.env = "LunarLander-v2"
-    args.steps = 100000
+    args.env = "CartPole-v1"
+    args.steps = 10000
+    # args.env = "LunarLander-v2"
+    # args.steps = 20000
+    # args.env = "HalfCheetah-v2"
+    # args.steps = 100000
 
     fl_high = -1
-    fl_low = -8
+    fl_low = -10
 
-    lr_base = trial.suggest_int("lr_b", 1, 5)
+    lr_base = trial.suggest_int("lr_b", 1, 9)
     lr_base = lr_base + (lr_base-1)
     lr_exp = trial.suggest_int("lr_e", fl_low, fl_high)
     args.lr = lr_base*(10**lr_exp)
 
-    beta_base = trial.suggest_int("beta_b", 1, 5)
+    beta_base = trial.suggest_int("beta_b", 1, 9)
     beta_base = beta_base + (beta_base-1)
     beta_exp = trial.suggest_int("beta_e", fl_low, fl_high)
     args.beta = beta_base*(10**beta_exp)
@@ -36,11 +40,15 @@ def objective(trial):
 
     args.activation = trial.suggest_categorical("activ", [0, 1, 2])
 
-    hid_categores = [16, 32, 64, 128]
+    hid_categores = [16, 32, 64, 128, 256]
     hid_cat = trial.suggest_int("hid", 0, len(hid_categores)-1)
     args.hidden_size = hid_categores[hid_cat]
+    args.eval_interval = None
 
-    return np.round(train_a3c.train_a3c(args), 2)
+    rew_sc = trial.suggest_int("rewsc", 1, 10)
+    args.rew_scale = 1.0/rew_sc
+
+    return np.round(train_a3c.train_a3c(args)*rew_sc, 2)
 
 
 optuna.logging.disable_default_handler()
