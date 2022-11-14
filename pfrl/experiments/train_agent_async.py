@@ -276,11 +276,17 @@ def train_agent_async(
                 all_grads.append(np.asarray(my_grad))
             all_grads = np.vstack(all_grads)
             #r = -np.mean(np.var(all_grads, axis=-1)) / ucb_param
-            all_grads = torch.Tensor(np.vstack(all_grads))
+            all_grads = torch.Tensor(all_grads)
+            #r = -torch.cdist(all_grads, all_grads).triu().mean() / ucb_param
             r = -euclidean_dist(all_grads, all_grads).triu().mean() / ucb_param
+
 
             # Update Q-values
             act_val[filter_act.value] += (r-act_val[filter_act.value]) / visits[filter_act.value]
+
+            # Mask permanently filtered agents
+            for i in range(len(filtered_agents)):
+                if filtered_agents[i] == 1: act_val[i] = -np.inf
 
             # Permanently disable an agent
             end_index = -1
@@ -305,22 +311,17 @@ def train_agent_async(
         print(list(np.round(np_visits, 2)))
         print(list(np.round(np_act_vals, 3)))
 
-        # Get the true UCB t value
-        ucb_timesteps = np.sum(np_visits) - (step_before_disable+1) * filtered_count.value
-        # Compute UCB policy values (Q-value + uncertainty)
-        values = np_act_vals + np.sqrt((np.log(ucb_timesteps)) / np_visits)
-
-        # Mask permanently filtered agents
-        for i in range(len(filtered_agents)):
-            if filtered_agents[i] == 1: act_val[i] = -np.inf
-
         # Initial selection (visits 0)
         if np.min(np_visits) < 1:
-            rnd_probs = np.ones(processes) / (processes - filtered_count.value)
+            rnd_probs = np.ones(processes) / (processes - np.count_nonzero(np_visits))
             for i in range(len(visits)):
-                if visits[i] == step_before_disable+1: rnd_probs[i] = 0.0
+                if visits[i] > 0: rnd_probs[i] = 0.0
             act = np.random.choice(processes, p=rnd_probs)
         else:   # UCB argmax policy
+            # Get the true UCB t value
+            ucb_timesteps = np.sum(np_visits) - (step_before_disable + 1) * filtered_count.value
+            # Compute UCB policy values (Q-value + uncertainty)
+            values = np_act_vals + np.sqrt(2*(np.log(ucb_timesteps)) / np_visits)
             act = np.argmax(values)
 
         # Increment visit for selected action
