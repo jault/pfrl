@@ -84,6 +84,8 @@ def parse_args():
 
 
 def train_a3c(args):
+    atari = False
+    if args.env == 'BreakoutNoFrameskip-v4': atari = True
 
     # Set a random seed used in PFRL.
     # If you use more than one processes, the results will be no longer
@@ -104,14 +106,16 @@ def train_a3c(args):
         # Use different random seeds for train and test envs
         process_seed = process_seeds[process_idx]
         env_seed = 2**31 - 1 - process_seed if test else process_seed
-        # env = atari_wrappers.wrap_deepmind(
-        #     atari_wrappers.make_atari(args.env, max_frames=args.max_frames),
-        #     episode_life=not test,
-        #     clip_rewards=not test,
-        # )
-        env = gym.make(args.env)
+        if atari:
+            env = atari_wrappers.wrap_deepmind(
+                atari_wrappers.make_atari(args.env, max_frames=args.max_frames),
+                episode_life=not test,
+                clip_rewards=not test,
+            )
+        else:
+            env = gym.make(args.env)
         env.seed(int(env_seed))
-        env = pfrl.wrappers.ScaleReward(env, args.rew_scale)
+        #env = pfrl.wrappers.ScaleReward(env, args.rew_scale)
         if args.monitor:
             env = pfrl.wrappers.Monitor(
                 env, args.outdir, mode="evaluation" if test else "training"
@@ -122,7 +126,9 @@ def train_a3c(args):
     sample_env = make_env(0, False)
     obs_size = sample_env.observation_space.low.shape[0]
 
-    if isinstance(sample_env.action_space, gym.spaces.Discrete):
+    if atari:
+        def make_model(): return make_atari_model(obs_size, sample_env.action_space.n)
+    elif isinstance(sample_env.action_space, gym.spaces.Discrete):
         n_actions = sample_env.action_space.n
         def make_model(): return make_discrete_model(obs_size, n_actions, args.hidden_size, args.activation)
     elif isinstance(sample_env.action_space, gym.spaces.Box):
@@ -133,6 +139,8 @@ def train_a3c(args):
 
     def phi(x):
         # Feature extractor
+        if atari:
+            return np.asarray(x, dtype=np.float32) / 255.
         return np.asarray(x, dtype=np.float32)
 
     model = make_model()
@@ -203,8 +211,9 @@ def train_a3c(args):
             step_before_disable=args.ucb_disable,
             ucb_param=args.ucb_param
         )
-    mean_reward = get_results(os.path.join(args.outdir, str(args.seed) + '.log'), gym.spec(args.env).reward_threshold)
-    return mean_reward
+    #mean_reward = get_results(os.path.join(args.outdir, str(args.seed) + '.log'), gym.spec(args.env).reward_threshold)
+    #return mean_reward
+    return 0    # TODO fix for hyp  tuning
 
 
 def get_results(log_file, thresh):
@@ -263,6 +272,24 @@ def make_continous_model(obs_size, action_size, hidden_size, activation):
                 )
             ),
             nn.Linear(hidden_size, 1)
+        ),
+    )
+
+def make_atari_model(obs_size, n_actions):
+    return nn.Sequential(
+        nn.Conv2d(obs_size, 16, 8, stride=4),
+        nn.ReLU(),
+        nn.Conv2d(16, 32, 4, stride=2),
+        nn.ReLU(),
+        nn.Flatten(),
+        nn.Linear(2592, 256),
+        nn.ReLU(),
+        pfrl.nn.Branched(
+            nn.Sequential(
+                nn.Linear(256, n_actions),
+                SoftmaxCategoricalHead(),
+            ),
+            nn.Linear(256, 1),
         ),
     )
 

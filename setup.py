@@ -4,7 +4,7 @@ from setuptools import setup
 
 install_requires = [
     'torch>=1.3.0',
-    'gym==0.22.0',
+    'gym[accept-rom-license]==0.22.0',
     'numpy>=1.10.4',
     'pillow',
     'filelock',
@@ -14,7 +14,9 @@ install_requires = [
     'mujoco-py<2.2,>=2.1',
     'optuna',
     'box2d',
-    'box2d-kengz'
+    'box2d-kengz',
+    'ale-py==0.7.4',
+    'opencv-python'
 ]
 
 test_requires = [
